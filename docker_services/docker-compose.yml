@@ -1,0 +1,89 @@
+services:
+
+  traefik:
+      image: traefik:latest
+      container_name: traefik
+      restart: unless-stopped
+      ports:
+        - "80:80"   # HTTP
+        - "443:443" # HTTPS
+        - "8080:8080" # Enable the dashboard port
+      volumes:
+        - "/var/run/docker.sock:/var/run/docker.sock:ro"
+        - "./traefik/traefik.yml:/traefik/traefik.yml"
+        - "./traefik/acme.json:/traefik/acme.json"
+      command: 
+        - "--api.insecure=true"
+        - "--providers.docker=true"
+        - "--api.dashboard=true"
+        - --providers.docker.network=portainer_network
+        - --entrypoints.web.address=:80
+        - --entrypoints.web.http.redirections.entrypoint.to=websecure
+        - --entryPoints.web.http.redirections.entrypoint.scheme=https
+        - --entrypoints.websecure.address=:443
+        # - --entrypoints.websecure.asDefault=true 
+        # - --entrypoints.websecure.http.tls.certresolver=myresolver
+        # - --certificatesresolvers.myresolver.acme.email=mail@example.com
+        # - --certificatesresolvers.myresolver.acme.tlschallenge=true
+        # - --certificatesresolvers.myresolver.acme.storage=/traefik/acme.json
+      networks:
+        - portainer_network
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.traefik.entrypoints=web,websecure"
+        - "traefik.http.routers.traefik.rule=Host(`traefik.localhost`)"
+        - "traefik.http.services.traefik.loadbalancer.server.port=8080"
+        # - traefik.http.routers.mydashboard.service=api@internal
+        # - traefik.http.routers.mydashboard.middlewares=myauth
+        # - traefik.http.middlewares.myauth.basicauth.users=test:$$apr1$$H6uskkkW$$IgXLP6ewTrSuBkTrqE8wj/
+        
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: portainer
+    restart: unless-stopped
+    ports:
+      - "9443:9443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+    networks:
+      - portainer_network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.portainer.entrypoints=web,websecure"
+      - "traefik.http.services.portainer.loadbalancer.server.port=9443"
+      - "traefik.http.routers.portainer.rule=Host(`portainer.localhost`)"
+
+  gptwol:
+    container_name: wake_on_lan
+    image: misterbabou/gptwol:latest
+    # network_mode: host  # Keep this for proper WOL functionality
+    restart: unless-stopped
+    ports:
+      - 8000:8000
+    environment:
+      - PORT=8000  # Port the web UI runs on
+      - TZ=Europe/Paris  # Set timezone
+    volumes:
+      - "./gptwol/db:/app/db"  # Persistent database storage
+      - "./gptwol/cron:/app/cron.d"  # Custom cron jobs
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.gptwol.entrypoints=web,websecure"
+      - "traefik.http.services.gptwol.loadbalancer.server.port=8000"
+      - "traefik.http.routers.gptwol.rule=Host(`gptwol.localhost`)"
+
+    networks:
+      - portainer_network
+
+volumes:
+  portainer_data:
+
+networks:
+  portainer_network:
+    name: portainer_network
